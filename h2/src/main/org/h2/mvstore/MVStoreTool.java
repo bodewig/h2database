@@ -31,6 +31,41 @@ import org.h2.store.fs.FileUtils;
  */
 public class MVStoreTool {
 
+    private enum Operation {
+        DUMP() {
+            @Override
+            protected void run(String fileName) {
+                dump(fileName, new PrintWriter(System.out), true);
+            }
+        },
+        INFO() {
+            @Override
+            protected void run(String fileName) {
+                info(fileName, new PrintWriter(System.out));
+            }
+        },
+        COMPACT() {
+            @Override
+            protected void run(String fileName) {
+                compact(fileName, false);
+            }
+        },
+        COMPRESS() {
+            @Override
+            protected void run(String fileName) {
+                compact(fileName, true);
+            }
+        },
+        REPAIR() {
+            @Override
+            protected void run(String fileName) {
+                repair(fileName);
+            }
+        };
+
+        protected abstract void run(String fileName);
+    }
+
     /**
      * Runs this tool.
      * Options are case sensitive. Supported options are:
@@ -43,29 +78,56 @@ public class MVStoreTool {
      * <td>Compact a store</td></tr>
      * <tr><td>[-compress &lt;fileName&gt;]</td>
      * <td>Compact a store with compression enabled</td></tr>
+     * <tr><td>[-repair &lt;fileName&gt;]</td>
+     * <td>Try to repair a store</td></tr>
      * </table>
      *
      * @param args the command line arguments
      */
     public static void main(String... args) {
+        String fileName = null;
+        Operation op = null;
         for (int i = 0; i < args.length; i++) {
             if ("-dump".equals(args[i])) {
-                String fileName = args[++i];
-                dump(fileName, new PrintWriter(System.out), true);
+                fileName = args[++i];
+                op = Operation.DUMP;
             } else if ("-info".equals(args[i])) {
-                String fileName = args[++i];
-                info(fileName, new PrintWriter(System.out));
+                fileName = args[++i];
+                op = Operation.INFO;
             } else if ("-compact".equals(args[i])) {
-                String fileName = args[++i];
-                compact(fileName, false);
+                fileName = args[++i];
+                op = Operation.COMPACT;
             } else if ("-compress".equals(args[i])) {
-                String fileName = args[++i];
-                compact(fileName, true);
+                fileName = args[++i];
+                op = Operation.COMPRESS;
             } else if ("-repair".equals(args[i])) {
-                String fileName = args[++i];
-                repair(fileName);
+                fileName = args[++i];
+                op = Operation.REPAIR;
             }
         }
+        if (fileName == null || op == null) {
+            showUsage();
+        } else {
+            op.run(fileName);
+        }
+    }
+
+    private static void showUsage() {
+        String className = MVStoreTool.class.getName();
+        System.out.println("Usage: java "+ className + " <options>");
+        System.out.println("Options are case sensitive. Supported options are:");
+        System.out.println("[-dump <fileName>]");
+        System.out.println("    Dump the contends of the file");
+        System.out.println("[-info <fileName>]");
+        System.out.println("    Get summary information about a file");
+        System.out.println("[-compact <fileName>]");
+        System.out.println("    Compact a store");
+        System.out.println("[-compress <fileName>]");
+        System.out.println("    Compact a store with compression enabled");
+        System.out.println("[-repair <fileName>]");
+        System.out.println("    Try to repair a store");
+        System.out.println("See also http://h2database.com/javadoc/" +
+                className.replace('.', '/') + ".html");
     }
 
     /**
