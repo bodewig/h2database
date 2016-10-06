@@ -12,6 +12,7 @@ import java.io.Writer;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.sql.Timestamp;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.TreeMap;
@@ -34,36 +35,36 @@ public class MVStoreTool {
     private enum Operation {
         DUMP() {
             @Override
-            protected void run(String fileName) {
+            protected void run(String fileName, char[] encryptionPassword) {
                 dump(fileName, new PrintWriter(System.out), true);
             }
         },
         INFO() {
             @Override
-            protected void run(String fileName) {
-                info(fileName, new PrintWriter(System.out));
+            protected void run(String fileName, char[] encryptionPassword) {
+                info(fileName, new PrintWriter(System.out), encryptionPassword);
             }
         },
         COMPACT() {
             @Override
-            protected void run(String fileName) {
+            protected void run(String fileName, char[] encryptionPassword) {
                 compact(fileName, false);
             }
         },
         COMPRESS() {
             @Override
-            protected void run(String fileName) {
+            protected void run(String fileName, char[] encryptionPassword) {
                 compact(fileName, true);
             }
         },
         REPAIR() {
             @Override
-            protected void run(String fileName) {
+            protected void run(String fileName, char[] encryptionPassword) {
                 repair(fileName);
             }
         };
 
-        protected abstract void run(String fileName);
+        protected abstract void run(String fileName, char[] encryptionPassword);
     }
 
     /**
@@ -80,6 +81,8 @@ public class MVStoreTool {
      * <td>Compact a store with compression enabled</td></tr>
      * <tr><td>[-repair &lt;fileName&gt;]</td>
      * <td>Try to repair a store</td></tr>
+     * <tr><td>[-filepwd &lt;pwd&gt;]</td>
+     * <td>Sets the encryption password (if not set: assume file is not encrypted)</td></tr>
      * </table>
      *
      * @param args the command line arguments
@@ -87,6 +90,7 @@ public class MVStoreTool {
     public static void main(String... args) {
         String fileName = null;
         Operation op = null;
+        char[] encryptionPassword = null;
         for (int i = 0; i < args.length; i++) {
             if ("-dump".equals(args[i])) {
                 fileName = args[++i];
@@ -103,12 +107,17 @@ public class MVStoreTool {
             } else if ("-repair".equals(args[i])) {
                 fileName = args[++i];
                 op = Operation.REPAIR;
+            } else if ("-filepwd".equals(args[i])) {
+                encryptionPassword = args[++i].toCharArray();
             }
         }
         if (fileName == null || op == null) {
             showUsage();
         } else {
-            op.run(fileName);
+            op.run(fileName, encryptionPassword);
+        }
+        if (encryptionPassword != null) {
+            Arrays.fill(encryptionPassword, '0');
         }
     }
 
@@ -126,6 +135,8 @@ public class MVStoreTool {
         System.out.println("    Compact a store with compression enabled");
         System.out.println("[-repair <fileName>]");
         System.out.println("    Try to repair a store");
+        System.out.println("[-filepwd <pwd>]");
+        System.out.println("    Sets the encryption password (if not set: assume file is not encrypted)");
         System.out.println("See also http://h2database.com/javadoc/" +
                 className.replace('.', '/') + ".html");
     }
@@ -146,7 +157,17 @@ public class MVStoreTool {
      * @param fileName the name of the file
      */
     public static void info(String fileName) {
-        info(fileName, new PrintWriter(System.out));
+        info(fileName, (char[]) null);
+    }
+
+    /**
+     * Read the summary information of the file and write them to system out.
+     *
+     * @param fileName the name of the file
+     * @param encryptionPassword encryption password of the file
+     */
+    public static void info(String fileName, char[] encryptionPassword) {
+        info(fileName, new PrintWriter(System.out), encryptionPassword);
     }
 
     /**
@@ -394,15 +415,31 @@ public class MVStoreTool {
      * @return null if successful (if there was no error), otherwise the error message
      */
     public static String info(String fileName, Writer writer) {
+        return info(fileName, writer, null);
+    }
+
+    /**
+     * Read the summary information of the file and write them to system out.
+     *
+     * @param fileName the name of the file
+     * @param writer the print writer
+     * @param encryptionPassword encryption password of the file
+     * @return null if successful (if there was no error), otherwise the error message
+     */
+    public static String info(String fileName, Writer writer, char[] encryptionPassword) {
         PrintWriter pw = new PrintWriter(writer, true);
         if (!FilePath.get(fileName).exists()) {
             pw.println("File not found: " + fileName);
             return "File not found: " + fileName;
         }
         long fileLength = FileUtils.size(fileName);
-        MVStore store = new MVStore.Builder().
+        MVStore.Builder builder = new MVStore.Builder().
                 fileName(fileName).
-                readOnly().open();
+                readOnly();
+        if (encryptionPassword != null) {
+            builder = builder.encryptionKey(encryptionPassword);
+        }
+        MVStore store = builder.open();
         try {
             MVMap<String, String> meta = store.getMetaMap();
             Map<String, Object> header = store.getStoreHeader();
