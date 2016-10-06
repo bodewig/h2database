@@ -48,13 +48,13 @@ public class MVStoreTool {
         COMPACT() {
             @Override
             protected void run(String fileName, char[] encryptionPassword) {
-                compact(fileName, false);
+                compact(fileName, false, encryptionPassword);
             }
         },
         COMPRESS() {
             @Override
             protected void run(String fileName, char[] encryptionPassword) {
-                compact(fileName, true);
+                compact(fileName, true, encryptionPassword);
             }
         },
         REPAIR() {
@@ -529,9 +529,26 @@ public class MVStoreTool {
      * @param compress whether to compress the data
      */
     public static void compact(String fileName, boolean compress) {
+        compact(fileName, compress, null);
+    }
+
+    /**
+     * Compress the store by creating a new file and copying the live pages
+     * there. Temporarily, a file with the suffix ".tempFile" is created. This
+     * file is then renamed, replacing the original file, if possible. If not,
+     * the new file is renamed to ".newFile", then the old file is removed, and
+     * the new file is renamed. This might be interrupted, so it's better to
+     * compactCleanUp before opening a store, in case this method was used.
+     *
+     * @param fileName the file name
+     * @param compress whether to compress the data
+     * @param encryptionPassword encryption password of the file
+     */
+    public static void compact(String fileName, boolean compress,
+                               char[] encryptionPassword) {
         String tempName = fileName + Constants.SUFFIX_MV_STORE_TEMP_FILE;
         FileUtils.delete(tempName);
-        compact(fileName, tempName, compress);
+        compact(fileName, tempName, compress, encryptionPassword);
         try {
             FileUtils.moveAtomicReplace(tempName, fileName);
         } catch (DbException e) {
@@ -574,15 +591,34 @@ public class MVStoreTool {
      * @param compress whether to compress the data
      */
     public static void compact(String sourceFileName, String targetFileName, boolean compress) {
-        MVStore source = new MVStore.Builder().
+        compact(sourceFileName, targetFileName, compress, null);
+    }
+
+    /**
+     * Copy all live pages from the source store to the target store.
+     *
+     * @param sourceFileName the name of the source store
+     * @param targetFileName the name of the target store
+     * @param compress whether to compress the data
+     * @param encryptionPassword encryption password of the file
+     */
+    public static void compact(String sourceFileName, String targetFileName, boolean compress,
+                               char[] encryptionPassword) {
+        MVStore.Builder sourceBuilder = new MVStore.Builder().
                 fileName(sourceFileName).
-                readOnly().
-                open();
+                readOnly();
+        if (encryptionPassword != null) {
+            sourceBuilder = sourceBuilder.encryptionKey(encryptionPassword);
+        }
+        MVStore source = sourceBuilder.open();
         FileUtils.delete(targetFileName);
         MVStore.Builder b = new MVStore.Builder().
                 fileName(targetFileName);
         if (compress) {
             b.compress();
+        }
+        if (encryptionPassword != null) {
+            b = b.encryptionKey(encryptionPassword);
         }
         MVStore target = b.open();
         compact(source, target);
